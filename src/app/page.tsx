@@ -37,6 +37,65 @@ type PayrollRecord = {
   };
 };
 
+type ReportPayroll = {
+  id: string;
+  employeeId: string;
+  name: string;
+  role: string;
+  department: string;
+  month: number;
+  year: number;
+  basicSalary: number;
+  allowances: number;
+  deductions: number;
+  netSalary: number;
+  status: string;
+  paidAt: string | null;
+};
+
+type PayrollReport = {
+  month: number;
+  year: number;
+  summary: {
+    employeeCount: number;
+    basicSalary: number;
+    allowances: number;
+    deductions: number;
+    netSalary: number;
+    paidAmount: number;
+    unpaidAmount: number;
+    paidCount: number;
+    unpaidCount: number;
+  };
+  payrolls: ReportPayroll[];
+};
+
+type PayrollInsights = {
+  generatedAt: string;
+  summary: {
+    totalEmployees: number;
+    payrollRecords: number;
+    basicSalary: number;
+    allowances: number;
+    deductions: number;
+    netSalary: number;
+    paidCount: number;
+    unpaidCount: number;
+    paidAmount: number;
+    unpaidAmount: number;
+  };
+  monthlyTrends: {
+    month: number;
+    year: number;
+    netSalary: number;
+  }[];
+  alerts: {
+    type: "warning" | "info";
+    title: string;
+    message: string;
+  }[];
+};
+
 const menuItems = [
   { name: "Dashboard", icon: "▦" },
   { name: "Employees", icon: "♙" },
@@ -59,18 +118,9 @@ const departments = [
 ];
 
 const months = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
+  "January", "February", "March", "April",
+  "May", "June", "July", "August",
+  "September", "October", "November", "December",
 ];
 
 function formatNaira(amount: number) {
@@ -79,10 +129,6 @@ function formatNaira(amount: number) {
     currency: "NGN",
     maximumFractionDigits: 2,
   }).format(amount);
-}
-
-function getSalary(employee: Employee) {
-  return Number(employee.salary);
 }
 
 function getMoney(value: string | number) {
@@ -110,6 +156,8 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [payrollLoading, setPayrollLoading] = useState(false);
   const [generatingPayroll, setGeneratingPayroll] = useState(false);
+  const [updatingPayrollId, setUpdatingPayrollId] =
+    useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [employeeId, setEmployeeId] = useState("");
@@ -121,6 +169,26 @@ export default function Home() {
   const [payrollYear, setPayrollYear] = useState(now.getFullYear());
   const [allowances, setAllowances] = useState("0");
   const [deductions, setDeductions] = useState("0");
+
+    const [reportMonth, setReportMonth] = useState(now.getMonth() + 1);
+  const [reportYear, setReportYear] = useState(now.getFullYear());
+  const [reportData, setReportData] = useState<PayrollReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [exportingReport, setExportingReport] = useState(false);
+
+  
+const [insights, setInsights] = useState<PayrollInsights | null>(null);
+const [insightsLoading, setInsightsLoading] = useState(false);
+const [insightsError, setInsightsError] = useState("");
+const [insightsRefreshKey, setInsightsRefreshKey] = useState(0);
+
+  
+const [voiceQuestion, setVoiceQuestion] = useState("");
+const [voiceAnswer, setVoiceAnswer] = useState("");
+const [isListening, setIsListening] = useState(false);
+const [isSpeaking, setIsSpeaking] = useState(false);
+const [voiceError, setVoiceError] = useState("");
 
   const loadEmployees = useCallback(async () => {
     setLoading(true);
@@ -191,19 +259,103 @@ export default function Home() {
       void loadPayroll();
     }
   }, [activeMenu, loadPayroll]);
+useEffect(() => {
+  if (activeMenu !== "Reports") return;
 
+  let cancelled = false;
+
+  async function loadReport() {
+    setReportLoading(true);
+    setReportError("");
+
+    try {
+      const response = await fetch(
+        `/api/reports?month=${reportMonth}&year=${reportYear}`,
+        { cache: "no-store" }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load payroll report.");
+      }
+
+      if (!cancelled) {
+        setReportData(data as PayrollReport);
+      }
+    } catch (error) {
+      if (!cancelled) {
+        setReportData(null);
+        setReportError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load payroll report."
+        );
+      }
+    } finally {
+      if (!cancelled) {
+        setReportLoading(false);
+      }
+    }
+  }
+
+  void loadReport();
+
+  return () => {
+    cancelled = true;
+  };
+}, [activeMenu, reportMonth, reportYear]);
+
+useEffect(() => {
+  if (activeMenu !== "AI Insights") return;
+
+  let cancelled = false;
+
+  async function loadInsights() {
+    setInsightsLoading(true);
+    setInsightsError("");
+
+    try {
+      const response = await fetch("/api/insights", {
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to load AI Payroll Insights."
+        );
+      }
+
+      if (!cancelled) {
+        setInsights(data as PayrollInsights);
+      }
+    } catch (error) {
+      if (!cancelled) {
+        setInsightsError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load payroll insights."
+        );
+      }
+    } finally {
+      if (!cancelled) {
+        setInsightsLoading(false);
+      }
+    }
+  }
+
+  void loadInsights();
+
+  return () => {
+    cancelled = true;
+  };
+}, [activeMenu, insightsRefreshKey]);
   const totalPayroll = employees.reduce(
-    (total, employee) => total + getSalary(employee),
+    (total, employee) => total + Number(employee.salary),
     0
   );
-
-  const paidCount = employees.filter(
-    (employee) => employee.status === "Paid"
-  ).length;
-
-  const pendingCount = employees.filter(
-    (employee) => employee.status !== "Paid"
-  ).length;
 
   const filteredEmployees = employees.filter((employee) =>
     `${employee.name} ${employee.employeeId} ${employee.role} ${employee.department}`
@@ -226,8 +378,12 @@ export default function Home() {
     (record) => record.status === "Paid"
   ).length;
 
+  const selectedApprovedCount = selectedPayrolls.filter(
+    (record) => record.status === "Approved"
+  ).length;
+
   const selectedPendingCount = selectedPayrolls.filter(
-    (record) => record.status !== "Paid"
+    (record) => record.status === "Pending"
   ).length;
 
   function resetForm() {
@@ -411,7 +567,9 @@ export default function Home() {
       deductionAmount < 0
     ) {
       setMessageType("error");
-      setMessage("Allowances and deductions must be valid non-negative amounts.");
+      setMessage(
+        "Allowances and deductions must be valid non-negative amounts."
+      );
       return;
     }
 
@@ -441,7 +599,8 @@ export default function Home() {
         throw new Error(data.error || "Unable to generate payroll.");
       }
 
-      setPayrolls(data.payrolls as PayrollRecord[]);
+      await loadPayroll();
+
       setMessageType("success");
       setMessage(data.message || "Payroll generated successfully.");
     } catch (error) {
@@ -455,6 +614,279 @@ export default function Home() {
       setGeneratingPayroll(false);
     }
   }
+
+  async function handlePayrollStatus(
+    record: PayrollRecord,
+    nextStatus: "Approved" | "Paid"
+  ) {
+    if (nextStatus === "Paid") {
+      const confirmed = window.confirm(
+        `Confirm that ${formatNaira(getMoney(record.netSalary))} has actually been paid to ${record.employee.name} for ${months[record.month - 1]} ${record.year}?\n\nThis action records the payment in SmartPayroll. It does not transfer money.`
+      );
+
+      if (!confirmed) return;
+    }
+
+    setUpdatingPayrollId(record.id);
+    setMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/payroll/${encodeURIComponent(record.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: nextStatus }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to update payroll status."
+        );
+      }
+
+      await loadPayroll();
+
+      setMessageType("success");
+      setMessage(data.message || "Payroll status updated successfully.");
+    } catch (error) {
+      setMessageType("error");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to update payroll status."
+      );
+    } finally {
+      setUpdatingPayrollId(null);
+    }
+  }
+
+  function statusClass(status: string) {
+    if (status === "Paid") {
+      return "bg-emerald-100 text-emerald-800";
+    }
+
+    if (status === "Approved") {
+      return "bg-blue-100 text-blue-800";
+    }
+
+    return "bg-amber-100 text-amber-800";
+  }
+async function handleExportReport() {
+  setExportingReport(true);
+  setReportError("");
+
+  try {
+    const response = await fetch(
+      `/api/reports/export?month=${reportMonth}&year=${reportYear}`,
+      { cache: "no-store" }
+    );
+
+    if (!response.ok) {
+      let errorMessage = "Unable to export the payroll report.";
+
+      try {
+        const data = await response.json();
+        errorMessage = data.error || errorMessage;
+      } catch {
+        // Keep the default error message if the response is not JSON.
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download =
+      `SmartPayroll-${months[reportMonth - 1]}-${reportYear}.xlsx`;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    setReportError(
+      error instanceof Error
+        ? error.message
+        : "Unable to download the Excel report."
+    );
+  } finally {
+    setExportingReport(false);
+  }
+}
+
+const answerVoiceQuestion = useCallback(
+  (question: string) => {
+    const data = insights;
+
+    if (!data) {
+      setVoiceAnswer("");
+      setVoiceError("AI insights are not loaded yet. Please refresh Insights and try again.");
+      return;
+    }
+
+    const q = question.toLowerCase();
+    const summary = data.summary;
+    let answer = "";
+
+    if (q.includes("employee") || q.includes("staff") || q.includes("worker")) {
+      answer = `SmartPayroll currently has ${summary.totalEmployees} employees.`;
+    } else if (
+      q.includes("unpaid") ||
+      q.includes("not paid") ||
+      q.includes("outstanding")
+    ) {
+      answer = `There are ${summary.unpaidCount} unpaid payroll records totalling ${formatNaira(summary.unpaidAmount)}.`;
+    } else if (q.includes("paid")) {
+      answer = `${summary.paidCount} payroll records are marked as paid, totalling ${formatNaira(summary.paidAmount)}.`;
+    } else if (
+      q.includes("net payroll") ||
+      q.includes("total payroll") ||
+      q.includes("payroll cost") ||
+      q.includes("payroll costs")
+    ) {
+      answer = `The total net payroll across saved records is ${formatNaira(summary.netSalary)}.`;
+    } else if (q.includes("basic salary") || q.includes("basic salaries")) {
+      answer = `The total basic salary across saved payroll records is ${formatNaira(summary.basicSalary)}.`;
+    } else if (q.includes("allowance")) {
+      answer = `Total allowances across saved payroll records are ${formatNaira(summary.allowances)}.`;
+    } else if (q.includes("deduction")) {
+      answer = `Total deductions across saved payroll records are ${formatNaira(summary.deductions)}.`;
+    } else if (q.includes("trend") || q.includes("month") || q.includes("changed")) {
+      if (data.monthlyTrends.length === 0) {
+        answer = "There are no monthly payroll trends available yet.";
+      } else {
+        const trends = data.monthlyTrends
+          .map(
+            (item) =>
+              `${months[item.month - 1]} ${item.year}: ${formatNaira(item.netSalary)}`
+          )
+          .join(". ");
+        answer = `Here are the available monthly payroll trends. ${trends}.`;
+      }
+    } else if (q.includes("alert") || q.includes("warning") || q.includes("problem")) {
+      answer =
+        data.alerts.length > 0
+          ? `There are ${data.alerts.length} payroll alerts. ${data.alerts
+              .map((alert) => `${alert.title}. ${alert.message}`)
+              .join(". ")}`
+          : "There are no payroll alerts at the moment.";
+    } else if (q.includes("hello") || q.includes("hi") || q.includes("good morning")) {
+      answer = "Hello! I am your SmartPayroll assistant. You can ask me about employees, payroll totals, paid records, unpaid records, or monthly trends.";
+    } else if (q.includes("help") || q.includes("what can you do")) {
+      answer = "I can report employee totals, net payroll, basic salaries, allowances, deductions, paid and unpaid records, alerts, and monthly trends. Try asking, how much payroll is unpaid?";
+    } else {
+      answer = "I can answer questions about employee totals, payroll costs, paid and unpaid records, allowances, deductions, alerts, and monthly trends. Please try asking about one of these topics.";
+    }
+
+    setVoiceAnswer(answer);
+    setVoiceError("");
+  },
+  [insights]
+);
+
+function startVoiceListening() {
+  setVoiceError("");
+
+  type SpeechRecognitionInstance = {
+    lang: string;
+    interimResults: boolean;
+    maxAlternatives: number;
+    onresult: ((event: {
+      results: ArrayLike<ArrayLike<{ transcript: string }>>;
+    }) => void) | null;
+    onerror: ((event: { error: string }) => void) | null;
+    onend: (() => void) | null;
+    start: () => void;
+    stop: () => void;
+  };
+
+  type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
+  const speechWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+
+  const Recognition =
+    speechWindow.SpeechRecognition ||
+    speechWindow.webkitSpeechRecognition;
+
+  if (!Recognition) {
+    setVoiceError(
+      "Voice input is not supported in this browser. Please use a recent version of Google Chrome or Microsoft Edge."
+    );
+    return;
+  }
+
+  const recognition = new Recognition();
+  recognition.lang = "en-NG";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0]?.[0]?.transcript?.trim();
+
+    if (transcript) {
+      setVoiceQuestion(transcript);
+      answerVoiceQuestion(transcript);
+    }
+  };
+
+  recognition.onerror = (event) => {
+    setVoiceError(`Voice input failed: ${event.error}. Please try again.`);
+    setIsListening(false);
+  };
+
+  recognition.onend = () => {
+    setIsListening(false);
+  };
+
+  setIsListening(true);
+
+  try {
+    recognition.start();
+  } catch {
+    setIsListening(false);
+    setVoiceError("The microphone could not start. Please try again.");
+  }
+}
+
+function speakVoiceAnswer() {
+  if (!voiceAnswer) {
+    setVoiceError("Ask a question first so I have an answer to read aloud.");
+    return;
+  }
+
+  if (!("speechSynthesis" in window)) {
+    setVoiceError("Spoken answers are not supported in this browser.");
+    return;
+  }
+
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(voiceAnswer);
+  utterance.lang = "en-NG";
+  utterance.rate = 1;
+
+  utterance.onstart = () => setIsSpeaking(true);
+  utterance.onend = () => setIsSpeaking(false);
+  utterance.onerror = () => {
+    setIsSpeaking(false);
+    setVoiceError("I could not read that answer aloud. Please try again.");
+  };
+
+  setVoiceError("");
+  window.speechSynthesis.speak(utterance);
+}
+
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 md:flex">
@@ -533,42 +965,6 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Total Employees</p>
-            <p className="mt-3 text-3xl font-bold">
-              {loading ? "…" : employees.length}
-            </p>
-            <p className="mt-2 text-xs text-emerald-700">Registered employees</p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Monthly Payroll</p>
-            <p className="mt-3 text-2xl font-bold">
-              {loading ? "…" : formatNaira(totalPayroll)}
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              Total listed monthly salaries
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Payments Completed</p>
-            <p className="mt-3 text-3xl font-bold">
-              {loading ? "…" : paidCount}
-            </p>
-            <p className="mt-2 text-xs text-emerald-700">Employee status summary</p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Payments Pending</p>
-            <p className="mt-3 text-3xl font-bold">
-              {loading ? "…" : pendingCount}
-            </p>
-            <p className="mt-2 text-xs text-amber-700">Employee status summary</p>
-          </div>
-        </section>
-
         {message && (
           <div
             role="status"
@@ -585,6 +981,53 @@ export default function Home() {
 
         {activeMenu === "Dashboard" && (
           <>
+            <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm text-slate-500">Total Employees</p>
+                <p className="mt-3 text-3xl font-bold">
+                  {loading ? "…" : employees.length}
+                </p>
+                <p className="mt-2 text-xs text-emerald-700">
+                  Registered employees
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm text-slate-500">Monthly Payroll</p>
+                <p className="mt-3 text-xl font-bold">
+                  {loading
+                    ? "…"
+                    : formatNaira(
+                        employees.reduce(
+                          (sum, employee) => sum + Number(employee.salary),
+                          0
+                        )
+                      )}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Total listed monthly salaries
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm text-slate-500">Payroll Records</p>
+                <p className="mt-3 text-3xl font-bold">{payrolls.length}</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  All generated payroll periods
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm text-slate-500">Paid Records</p>
+                <p className="mt-3 text-3xl font-bold">
+                  {payrolls.filter((record) => record.status === "Paid").length}
+                </p>
+                <p className="mt-2 text-xs text-emerald-700">
+                  Payments recorded
+                </p>
+              </div>
+            </section>
+
             <section className="mb-8 grid gap-6 xl:grid-cols-3">
               <div className="rounded-2xl bg-emerald-600 p-6 text-white shadow-sm xl:col-span-2">
                 <p className="text-sm text-emerald-100">Payroll workspace</p>
@@ -592,8 +1035,8 @@ export default function Home() {
                   Manage payroll with confidence
                 </h3>
                 <p className="mt-3 max-w-lg text-sm leading-6 text-emerald-50">
-                  Organise employee records, review salary information, and
-                  prepare your payroll workflow in one place.
+                  Organise employee records, generate payroll, review salary
+                  calculations, approve payments, and record completed payments.
                 </p>
                 <button
                   type="button"
@@ -608,26 +1051,19 @@ export default function Home() {
                 <h3 className="font-bold">Payroll Checklist</h3>
                 <p className="mt-1 text-sm text-slate-500">Monthly workflow</p>
                 <div className="mt-5 space-y-4 text-sm">
-                  <p>✓ Review employee records</p>
+                  <p>1. Review employee records</p>
                   <p>2. Verify salary calculations</p>
                   <p>3. Approve payroll</p>
+                  <p>4. Record completed payments</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => openSection("Payroll")}
+                  className="mt-5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                >
+                  Open Payroll
+                </button>
               </div>
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-bold">Getting Started</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Register employees first, then open Payroll to generate saved
-                payroll records for a selected month.
-              </p>
-              <button
-                type="button"
-                onClick={() => openSection("Payroll")}
-                className="mt-4 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700"
-              >
-                Open Payroll
-              </button>
             </section>
           </>
         )}
@@ -737,12 +1173,10 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={saving}
-                    className="rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                   >
                     {saving
-                      ? editingEmployee
-                        ? "Updating..."
-                        : "Saving..."
+                      ? "Saving..."
                       : editingEmployee
                         ? "Save Changes"
                         : "Save Employee"}
@@ -752,7 +1186,7 @@ export default function Home() {
                     type="button"
                     disabled={saving}
                     onClick={resetForm}
-                    className="rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                    className="rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                   >
                     Cancel
                   </button>
@@ -782,7 +1216,6 @@ export default function Home() {
                     <th className="px-5 py-4 font-semibold">Employee</th>
                     <th className="px-5 py-4 font-semibold">Department</th>
                     <th className="px-5 py-4 font-semibold">Monthly Salary</th>
-                    <th className="px-5 py-4 font-semibold">Payment Status</th>
                     <th className="px-5 py-4 font-semibold">Actions</th>
                   </tr>
                 </thead>
@@ -799,18 +1232,7 @@ export default function Home() {
                         {employee.department}
                       </td>
                       <td className="px-5 py-4 font-medium">
-                        {formatNaira(getSalary(employee))}
-                      </td>
-                      <td className="px-5 py-4">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            employee.status === "Paid"
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-amber-100 text-amber-800"
-                          }`}
-                        >
-                          {employee.status}
-                        </span>
+                        {formatNaira(Number(employee.salary))}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
@@ -837,7 +1259,7 @@ export default function Home() {
 
                   {!loading && filteredEmployees.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-5 py-10 text-center text-slate-500">
+                      <td colSpan={4} className="px-5 py-10 text-center text-slate-500">
                         {employees.length === 0
                           ? "No employees saved yet. Use Add Employee to register your first employee."
                           : "No employees match your search."}
@@ -848,16 +1270,11 @@ export default function Home() {
               </table>
             </div>
 
-            <p className="mt-5 text-xs leading-5 text-slate-500">
-              Employee records are loaded from PostgreSQL. Adding, editing,
-              and deleting employees uses the SmartPayroll API.
-            </p>
-
             <button
               type="button"
               onClick={() => void loadEmployees()}
               disabled={loading || saving || deletingId !== null}
-              className="mt-3 rounded-lg border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              className="mt-5 rounded-lg border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             >
               {loading ? "Refreshing..." : "Refresh employees"}
             </button>
@@ -954,14 +1371,14 @@ export default function Home() {
                     payrollYear < 2000 ||
                     payrollYear > 2100
                   }
-                  className="rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
                   {generatingPayroll ? "Generating..." : "Generate Payroll"}
                 </button>
               </form>
             </section>
 
-            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <p className="text-sm text-slate-500">Payroll Employees</p>
                 <p className="mt-3 text-3xl font-bold">
@@ -978,17 +1395,7 @@ export default function Home() {
                   {payrollLoading ? "…" : formatNaira(selectedPayrollTotal)}
                 </p>
                 <p className="mt-2 text-xs text-slate-500">
-                  Saved net salaries for this period
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="text-sm text-slate-500">Marked Paid</p>
-                <p className="mt-3 text-3xl font-bold">
-                  {payrollLoading ? "…" : selectedPaidCount}
-                </p>
-                <p className="mt-2 text-xs text-emerald-700">
-                  Payroll payment status
+                  Saved net salaries
                 </p>
               </div>
 
@@ -998,7 +1405,27 @@ export default function Home() {
                   {payrollLoading ? "…" : selectedPendingCount}
                 </p>
                 <p className="mt-2 text-xs text-amber-700">
+                  Awaiting review
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm text-slate-500">Approved</p>
+                <p className="mt-3 text-3xl font-bold">
+                  {payrollLoading ? "…" : selectedApprovedCount}
+                </p>
+                <p className="mt-2 text-xs text-blue-700">
                   Awaiting payment
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm text-slate-500">Marked Paid</p>
+                <p className="mt-3 text-3xl font-bold">
+                  {payrollLoading ? "…" : selectedPaidCount}
+                </p>
+                <p className="mt-2 text-xs text-emerald-700">
+                  Payment recorded
                 </p>
               </div>
             </section>
@@ -1008,14 +1435,14 @@ export default function Home() {
                 <div>
                   <h3 className="text-xl font-bold">Payroll Records</h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    Saved payroll data retrieved from PostgreSQL.
+                    Review payroll, approve salaries, and record completed payments.
                   </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => void loadPayroll()}
-                  disabled={payrollLoading || generatingPayroll}
+                  disabled={payrollLoading || generatingPayroll || updatingPayrollId !== null}
                   className="rounded-lg border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
                 >
                   {payrollLoading ? "Refreshing..." : "Refresh Payroll"}
@@ -1028,7 +1455,7 @@ export default function Home() {
                 </p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1050px] text-left text-sm">
+                  <table className="w-full min-w-[1250px] text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-4 py-4 font-semibold">Employee</th>
@@ -1038,49 +1465,106 @@ export default function Home() {
                         <th className="px-4 py-4 font-semibold">Deduction</th>
                         <th className="px-4 py-4 font-semibold">Net Salary</th>
                         <th className="px-4 py-4 font-semibold">Status</th>
+                        <th className="px-4 py-4 font-semibold">Payment Date</th>
+                        <th className="px-4 py-4 font-semibold">Actions</th>
                       </tr>
                     </thead>
+
                     <tbody className="divide-y divide-slate-100">
                       {selectedPayrolls.map((record) => (
                         <tr key={record.id} className="hover:bg-slate-50">
                           <td className="px-4 py-4">
-                            <p className="font-semibold">{record.employee.name}</p>
+                            <p className="font-semibold">
+                              {record.employee.name}
+                            </p>
                             <p className="mt-1 text-xs text-slate-500">
                               {record.employee.employeeId} · {record.employee.department}
                             </p>
                           </td>
+
                           <td className="px-4 py-4">
                             {months[record.month - 1]} {record.year}
                           </td>
+
                           <td className="px-4 py-4">
                             {formatNaira(getMoney(record.basicSalary))}
                           </td>
+
                           <td className="px-4 py-4">
                             {formatNaira(getMoney(record.allowances))}
                           </td>
+
                           <td className="px-4 py-4">
                             {formatNaira(getMoney(record.deductions))}
                           </td>
+
                           <td className="px-4 py-4 font-semibold">
                             {formatNaira(getMoney(record.netSalary))}
                           </td>
+
                           <td className="px-4 py-4">
                             <span
-                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                record.status === "Paid"
-                                  ? "bg-emerald-100 text-emerald-800"
-                                  : "bg-amber-100 text-amber-800"
-                              }`}
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(record.status)}`}
                             >
                               {record.status}
                             </span>
+                          </td>
+
+                          <td className="px-4 py-4 text-xs text-slate-600">
+                            {record.paidAt
+                              ? new Date(record.paidAt).toLocaleDateString("en-GB")
+                              : "—"}
+                          </td>
+
+                          <td className="px-4 py-4">
+                            {record.status === "Pending" && (
+                              <button
+                                type="button"
+                                disabled={updatingPayrollId !== null}
+                                onClick={() =>
+                                  void handlePayrollStatus(record, "Approved")
+                                }
+                                className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {updatingPayrollId === record.id
+                                  ? "Processing..."
+                                  : "Approve"}
+                              </button>
+                            )}
+
+                            {record.status === "Approved" && (
+                              <button
+                                type="button"
+                                disabled={updatingPayrollId !== null}
+                                onClick={() =>
+                                  void handlePayrollStatus(record, "Paid")
+                                }
+                                className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                {updatingPayrollId === record.id
+                                  ? "Processing..."
+                                  : "Mark as Paid"}
+                              </button>
+                            )}
+
+                            {record.status === "Paid" && (
+                              <span className="text-xs font-medium text-emerald-700">
+                                Payment recorded
+                              </span>
+                            )}
+
+                            {!["Pending", "Approved", "Paid"].includes(record.status) && (
+                              <span className="text-xs text-slate-500">
+                                No action available
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))}
 
                       {selectedPayrolls.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                          <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
                             No payroll records for {months[payrollMonth - 1]} {payrollYear}.
                             Choose a period and generate payroll to begin.
                           </td>
@@ -1092,17 +1576,547 @@ export default function Home() {
               )}
 
               <p className="mt-5 text-xs leading-5 text-slate-500">
-                Generating payroll saves salary calculations with Pending
-                status. This prototype does not transfer money or confirm
-                real payments.
+                Generated payroll starts as Pending. Approve a record before
+                recording payment. Mark as Paid only after the payment has
+                actually been made. This prototype does not transfer money.
               </p>
             </section>
           </div>
         )}
+{activeMenu === "Reports" && (
+  <section className="space-y-6">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 className="text-2xl font-bold text-white">
+          Payroll Reports
+        </h2>
+        <p className="mt-1 text-sm text-gray-400">
+          Review payroll summaries and export your records to Excel.
+        </p>
+      </div>
 
-        {activeMenu !== "Dashboard" &&
-          activeMenu !== "Employees" &&
-          activeMenu !== "Payroll" && (
+      <button
+        onClick={handleExportReport}
+        disabled={reportLoading || exportingReport || !reportData}
+        className="rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {exportingReport ? "Exporting..." : "Download Excel"}
+      </button>
+    </div>
+
+    <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+      <h3 className="mb-4 text-lg font-semibold text-white">
+        Select Report Period
+      </h3>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label
+            htmlFor="report-month"
+            className="mb-2 block text-sm text-gray-300"
+          >
+            Month
+          </label>
+          <select
+            id="report-month"
+            value={reportMonth}
+            onChange={(event) =>
+              setReportMonth(Number(event.target.value))
+            }
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white"
+          >
+            {months.map((month, index) => (
+              <option key={month} value={index + 1}>
+                {month}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label
+            htmlFor="report-year"
+            className="mb-2 block text-sm text-gray-300"
+          >
+            Year
+          </label>
+          <select
+            id="report-year"
+            value={reportYear}
+            onChange={(event) =>
+              setReportYear(Number(event.target.value))
+            }
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white"
+          >
+            {Array.from(
+              { length: 7 },
+              (_, index) => new Date().getFullYear() - 3 + index
+            ).map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    {reportError && (
+      <div
+        role="alert"
+        className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-300"
+      >
+        {reportError}
+      </div>
+    )}
+
+    {reportLoading ? (
+      <div className="rounded-xl border border-gray-700 bg-gray-900 p-10 text-center text-gray-300">
+        Loading payroll report...
+      </div>
+    ) : reportData ? (
+      <>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+            <p className="text-sm text-gray-400">Payroll Employees</p>
+            <p className="mt-2 text-2xl font-bold text-white">
+              {reportData.summary.employeeCount}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+            <p className="text-sm text-gray-400">Basic Salaries</p>
+            <p className="mt-2 text-2xl font-bold text-white">
+              {formatNaira(reportData.summary.basicSalary)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+            <p className="text-sm text-gray-400">Net Payroll</p>
+            <p className="mt-2 text-2xl font-bold text-blue-400">
+              {formatNaira(reportData.summary.netSalary)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+            <p className="text-sm text-gray-400">Amount Paid</p>
+            <p className="mt-2 text-2xl font-bold text-green-400">
+              {formatNaira(reportData.summary.paidAmount)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+            <p className="text-sm text-gray-400">Allowances</p>
+            <p className="mt-2 text-xl font-bold text-white">
+              {formatNaira(reportData.summary.allowances)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+            <p className="text-sm text-gray-400">Deductions</p>
+            <p className="mt-2 text-xl font-bold text-white">
+              {formatNaira(reportData.summary.deductions)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+            <p className="text-sm text-gray-400">Unpaid Amount</p>
+            <p className="mt-2 text-xl font-bold text-orange-400">
+              {formatNaira(reportData.summary.unpaidAmount)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+            <p className="text-sm text-gray-400">Payment Status</p>
+            <p className="mt-2 text-xl font-bold text-white">
+              {reportData.summary.paidCount} paid
+            </p>
+            <p className="mt-1 text-sm text-gray-400">
+              {reportData.summary.unpaidCount} unpaid
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-gray-700 bg-gray-900">
+          <div className="border-b border-gray-700 p-5">
+            <h3 className="text-lg font-semibold text-white">
+              Payroll Details
+            </h3>
+            <p className="mt-1 text-sm text-gray-400">
+              {months[reportData.month - 1]} {reportData.year}
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1000px] text-left text-sm">
+              <thead className="bg-gray-800 text-gray-300">
+                <tr>
+                  <th className="px-4 py-3">Employee</th>
+                  <th className="px-4 py-3">Department</th>
+                  <th className="px-4 py-3">Basic Salary</th>
+                  <th className="px-4 py-3">Allowances</th>
+                  <th className="px-4 py-3">Deductions</th>
+                  <th className="px-4 py-3">Net Salary</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Paid Date</th>
+                </tr>
+              </thead>
+
+<tbody className="divide-y divide-gray-800 text-gray-200">
+  {reportData.payrolls.map((payroll, index) => (
+    <tr
+      key={`${payroll.employeeId}-${index}`}
+      className="transition hover:bg-gray-800/60"
+    >
+      <td className="px-4 py-4 font-medium">
+        {payroll.name}
+      </td>
+      <td className="px-4 py-4">
+        {payroll.department || "—"}
+      </td>
+      <td className="px-4 py-4">
+        {formatNaira(payroll.basicSalary)}
+      </td>
+      <td className="px-4 py-4">
+        {formatNaira(payroll.allowances)}
+      </td>
+      <td className="px-4 py-4">
+        {formatNaira(payroll.deductions)}
+      </td>
+      <td className="px-4 py-4 font-semibold">
+        {formatNaira(payroll.netSalary)}
+      </td>
+    </tr>
+  ))}
+</tbody>
+
+            </table>
+          </div>
+
+          {reportData.payrolls.length === 0 && (
+            <p className="p-8 text-center text-gray-400">
+              No payroll records were found for this period.
+            </p>
+          )}
+        </div>
+      </>
+    ) : (
+      <div className="rounded-xl border border-gray-700 bg-gray-900 p-10 text-center">
+        <p className="text-gray-300">
+          No report data is available for the selected period.
+        </p>
+      </div>
+    )}
+  </section>
+)}
+
+{activeMenu === "AI Insights" && (
+  <section className="space-y-6">
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <div>
+        <h3 className="text-xl font-bold">AI Payroll Insights</h3>
+        <p className="mt-2 text-sm text-slate-500">
+          Review payroll costs, payment status, and monthly changes.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setInsightsRefreshKey((key) => key + 1)}
+        disabled={insightsLoading}
+        className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+      >
+        {insightsLoading ? "Refreshing..." : "Refresh Insights"}
+      </button>
+    </div>
+
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+      These insights use payroll calculations and rule-based checks.
+      Review alerts before taking action. They do not prove an error
+      has occurred, approve payroll, or make payments.
+    </div>
+
+
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-4">
+        <h4 className="text-lg font-bold">✧ Voice Payroll Assistant</h4>
+        <p className="mt-1 text-sm text-slate-500">
+          Ask about employee totals, payroll costs, payments, or monthly trends.
+          You can type your question or use the microphone.
+        </p>
+      </div>
+
+      <form
+        className="flex flex-col gap-3 sm:flex-row"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (voiceQuestion.trim()) {
+            answerVoiceQuestion(voiceQuestion.trim());
+          }
+        }}
+      >
+        <input
+          type="text"
+          value={voiceQuestion}
+          onChange={(event) => setVoiceQuestion(event.target.value)}
+          placeholder="e.g. How much payroll is unpaid?"
+          className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+        />
+
+        <button
+          type="submit"
+          disabled={!voiceQuestion.trim() || !insights}
+          className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Ask
+        </button>
+
+        <button
+          type="button"
+          onClick={startVoiceListening}
+          disabled={isListening || !insights}
+          className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isListening ? "Listening..." : "🎙 Speak"}
+        </button>
+      </form>
+
+      {isListening && (
+        <p className="mt-3 text-sm text-emerald-700" role="status">
+          Listening... Please ask your payroll question.
+        </p>
+      )}
+
+      {voiceAnswer && (
+        <div className="mt-5 rounded-xl bg-slate-50 p-4">
+          <p className="text-sm font-semibold text-slate-800">Assistant response</p>
+          <p className="mt-2 text-sm leading-6 text-slate-700" aria-live="polite">
+            {voiceAnswer}
+          </p>
+
+          <button
+            type="button"
+            onClick={speakVoiceAnswer}
+            className="mt-4 rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+          >
+            {isSpeaking ? "Speaking..." : "🔊 Speak Answer"}
+          </button>
+
+          {isSpeaking && (
+            <button
+              type="button"
+              onClick={() => {
+                window.speechSynthesis.cancel();
+                setIsSpeaking(false);
+              }}
+              className="ml-2 rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-white"
+            >
+              Stop
+            </button>
+          )}
+        </div>
+      )}
+
+      {voiceError && (
+        <p className="mt-3 text-sm text-red-700" role="alert">
+          {voiceError}
+        </p>
+      )}
+
+      <p className="mt-4 text-xs leading-5 text-slate-500">
+        Responses use your loaded payroll insights and predefined rules. Verify
+        important figures before making payroll decisions. Microphone support
+        depends on your browser and microphone permissions.
+      </p>
+    </div>
+
+    {insightsError && (
+      <div
+        role="alert"
+        className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+      >
+        {insightsError}
+      </div>
+    )}
+
+    {insightsLoading && !insights && (
+      <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
+        Analysing payroll records...
+      </div>
+    )}
+
+    {insights && (
+      <>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">Total Employees</p>
+            <p className="mt-3 text-3xl font-bold">
+              {insights.summary.totalEmployees}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">Total Net Payroll</p>
+            <p className="mt-3 text-xl font-bold">
+              {formatNaira(insights.summary.netSalary)}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              {insights.summary.payrollRecords} payroll records
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">Amount Paid</p>
+            <p className="mt-3 text-xl font-bold text-emerald-700">
+              {formatNaira(insights.summary.paidAmount)}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              {insights.summary.paidCount} paid record(s)
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">Amount Unpaid</p>
+            <p className="mt-3 text-xl font-bold text-amber-700">
+              {formatNaira(insights.summary.unpaidAmount)}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              {insights.summary.unpaidCount} unpaid record(s)
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-bold">Payroll Breakdown</h3>
+
+            <div className="mt-5 space-y-4 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-500">Basic salaries</span>
+                <span className="font-semibold">
+                  {formatNaira(insights.summary.basicSalary)}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-500">Allowances</span>
+                <span className="font-semibold">
+                  {formatNaira(insights.summary.allowances)}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-500">Deductions</span>
+                <span className="font-semibold">
+                  {formatNaira(insights.summary.deductions)}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4 border-t border-slate-200 pt-4">
+                <span className="font-semibold">Net payroll</span>
+                <span className="font-bold text-emerald-700">
+                  {formatNaira(insights.summary.netSalary)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-bold">Payroll Alerts</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Items that may need an administrator's attention.
+            </p>
+
+            <div className="mt-5 space-y-4">
+              {insights.alerts.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  No rule-based alerts were detected.
+                </p>
+              ) : (
+                insights.alerts.map((alert, index) => (
+                  <div
+                    key={`${alert.title}-${index}`}
+                    className={`rounded-xl border p-4 ${
+                      alert.type === "warning"
+                        ? "border-amber-200 bg-amber-50"
+                        : "border-blue-200 bg-blue-50"
+                    }`}
+                  >
+                    <p className="font-semibold">{alert.title}</p>
+                    <p className="mt-2 text-sm leading-6">
+                      {alert.message}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="text-lg font-bold">Monthly Payroll Trends</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Net payroll for each month with saved records.
+          </p>
+
+          {insights.monthlyTrends.length === 0 ? (
+            <p className="mt-5 text-sm text-slate-500">
+              No payroll history is available yet.
+            </p>
+          ) : (
+            <div className="mt-5 space-y-5">
+              {insights.monthlyTrends.map((trend) => {
+                const maximum = Math.max(
+                  ...insights.monthlyTrends.map(
+                    (item) => item.netSalary
+                  ),
+                  1
+                );
+
+                const width = Math.max(
+                  2,
+                  (trend.netSalary / maximum) * 100
+                );
+
+                return (
+                  <div key={`${trend.year}-${trend.month}`}>
+                    <div className="mb-2 flex flex-wrap justify-between gap-2 text-sm">
+                      <span className="font-medium">
+                        {months[trend.month - 1]} {trend.year}
+                      </span>
+                      <span className="font-semibold">
+                        {formatNaira(trend.netSalary)}
+                      </span>
+                    </div>
+
+                    <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-emerald-500"
+                        style={{ width: `${width}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <p className="text-xs text-slate-400">
+          Last analysed:{" "}
+          {new Date(insights.generatedAt).toLocaleString("en-NG")}
+        </p>
+      </>
+    )}
+  </section>
+)}
+
+  {activeMenu !== "Dashboard" &&
+  activeMenu !== "Employees" &&
+  activeMenu !== "Payroll" &&
+  activeMenu !== "Reports" &&
+  activeMenu !== "AI Insights" && (
+
             <section className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
               <h3 className="text-xl font-bold">{activeMenu}</h3>
               <p className="mt-3 text-sm leading-6 text-slate-500">
@@ -1125,6 +2139,7 @@ export default function Home() {
               >
                 Go to Employees
               </button>
+              
             </section>
           )}
 
